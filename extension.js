@@ -51,7 +51,7 @@ class MprisLabel extends PanelMenu.Button {
 		this.players = new Players();
 
 		this._buildMenu();
-		this.connect('button-press-event',this._buildMenu.bind(this));
+		this.connect('button-press-event',(_a, event) => this._onClick(event));
 
 		this.settings.connect('changed::left-padding',this._onPaddingChanged.bind(this));
 		this.settings.connect('changed::right-padding',this._onPaddingChanged.bind(this));
@@ -114,6 +114,39 @@ class MprisLabel extends PanelMenu.Button {
 		}
 		else if(EXTENSION_PLACE == "right"){
 			Main.panel._rightBox.insert_child_at_index(this.container, EXTENSION_INDEX);
+		}
+	}
+
+	_onClick(event){
+		this.menu.close(); //prevent click from opening the menu
+		switch(event.get_button()){
+			case Clutter.BUTTON_PRIMARY:
+				this._activateButton('left-click-action');
+				return Clutter.EVENT_STOP;
+			case Clutter.BUTTON_MIDDLE:
+				this._activateButton('middle-click-action');
+				return Clutter.EVENT_STOP;
+			case Clutter.BUTTON_SECONDARY:
+				this._activateButton('right-click-action');
+				return Clutter.EVENT_STOP;
+		}
+	}
+
+	_activateButton(option) {
+		const value = this.settings.get_string(option);
+
+		switch(value){
+			case 'play-pause':
+				if(this.player)
+					this.player.toggleStatus();
+			case 'next-track':
+				if(this.player)
+					this.player.goNext();
+			case 'prev-track':
+				if(this.player)
+					this.player.goPrevious();
+			case 'open-menu':
+				this.menu.open();
 		}
 	}
 
