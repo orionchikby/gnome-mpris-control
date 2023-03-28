@@ -6,6 +6,8 @@ const mprisInterface = `
 <node>
 	<interface name="org.mpris.MediaPlayer2.Player">
 		<method name="PlayPause" />
+		<method name="Play" />
+		<method name="Pause" />
 		<method name="Next" />
 		<method name="Previous" />
 		<property name="CanPlay" type="b" access="read" />
@@ -135,17 +137,19 @@ var Players = class Players {
 		const SOURCES_WHITELIST = this.settings.get_string('mpris-sources-whitelist');
 		let USE_WHITELIST = this.settings.get_boolean('use-whitelisted-sources-only');
 
-		if(!SOURCES_BLACKLIST || !SOURCES_WHITELIST)
-			this.list = this.unfilteredList;
+		if (!SOURCES_BLACKLIST || !SOURCES_WHITELIST) {
+			this.list = this.unfilteredList
+		}
 
-		const blacklist = SOURCES_BLACKLIST.toLowerCase().replaceAll(' ','').split(',');
-		const whitelist = SOURCES_WHITELIST.toLowerCase().replaceAll(' ','').split(',');
+		if (USE_WHITELIST && SOURCES_WHITELIST) {
+			const whitelist = SOURCES_WHITELIST.toLowerCase().replaceAll(' ', '').split(',')
+			this.list = this.unfilteredList.filter(element => whitelist.includes(element.identity.toLowerCase().replaceAll(' ', '')))
+		}
 
-		if(USE_WHITELIST && SOURCES_WHITELIST)
-			this.list = this.unfilteredList.filter(element => whitelist.includes(element.identity.toLowerCase().replaceAll(' ','')));
-
-		if(!USE_WHITELIST && SOURCES_BLACKLIST)
-			this.list = this.unfilteredList.filter(element => !blacklist.includes(element.identity.toLowerCase().replaceAll(' ','')));
+		if (!USE_WHITELIST && SOURCES_BLACKLIST) {
+			const blacklist = SOURCES_BLACKLIST.toLowerCase().replaceAll(' ', '').split(',')
+			this.list = this.unfilteredList.filter(element => !blacklist.includes(element.identity.toLowerCase().replaceAll(' ', '')));
+		}
 	}
 	updateActiveList(){
 		let actives = [];
@@ -232,7 +236,7 @@ class Player {
 			else if (ICON_PLACE == "left")
 				icon_right_padding = 3
 
-			let icon = new St.Icon({
+		let icon = new St.Icon({
 			style_class: 'system-status-icon',
 			fallback_icon_name: 'audio-volume-high',
 			style: "padding-left: " + icon_left_padding + "px;padding-right: " + icon_right_padding + "px;"
@@ -249,6 +253,17 @@ class Player {
 	toggleStatus() {
 		if (this.proxy.CanPlay && this.proxy.CanPause)
 			this.proxy.PlayPauseRemote()
+	}
+	play() {
+		if (this.proxy.CanPlay || this.proxy.CanPause)
+			this.proxy.PlayRemote()
+	}
+	pause() {
+		if (this.proxy.CanPlay || this.proxy.CanPause)
+			this.proxy.PauseRemote()
+	}
+	playbackStatus(){
+		return this.proxy.playbackStatus
 	}
 	goNext(){
 		if (this.proxy.CanGoNext)

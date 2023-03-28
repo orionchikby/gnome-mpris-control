@@ -65,6 +65,9 @@ class MprisLabel extends PanelMenu.Button {
 
 		this._repositionTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT,REPOSITION_DELAY,this._updateTrayPosition.bind(this));
 
+		this.panelControls = new PanelControls();
+		this.settings.connect('changed::show-panel-controls', this.panelControls.updateShowPanelControls.bind(this))
+
 		this._refresh();
 	}
 
@@ -75,7 +78,7 @@ class MprisLabel extends PanelMenu.Button {
 		const SHOW_ICON = this.settings.get_string('show-icon');
 
 		if(SHOW_ICON){
-			if (ICON_PLACE == "right")
+			if (ICON_PLACE === "right")
 				RIGHT_PADDING = Math.max(0,RIGHT_PADDING - 5)
 			else
 				LEFT_PADDING = Math.max(0,LEFT_PADDING - 5)
@@ -108,22 +111,31 @@ class MprisLabel extends PanelMenu.Button {
 
 		this.container.get_parent().remove_child(this.container);
 
-		if(EXTENSION_PLACE == "left"){
-			Main.panel._leftBox.insert_child_at_index(this.container, EXTENSION_INDEX);
-		}
-		else if(EXTENSION_PLACE == "center"){
-			Main.panel._centerBox.insert_child_at_index(this.container, EXTENSION_INDEX);
-		}
-		else if(EXTENSION_PLACE == "right"){
-			Main.panel._rightBox.insert_child_at_index(this.container, EXTENSION_INDEX);
+		if (EXTENSION_PLACE === 'left') {
+			Main.panel._leftBox.insert_child_at_index(this.container, EXTENSION_INDEX)
+			Main.panel._leftBox.insert_child_at_index(this.panelControls.container, EXTENSION_INDEX + 1)
+		} else if (EXTENSION_PLACE === 'center') {
+			Main.panel._centerBox.insert_child_at_index(this.container, EXTENSION_INDEX)
+			Main.panel._centerBox.insert_child_at_index(this.panelControls.container, EXTENSION_INDEX + 1)
+		} else if (EXTENSION_PLACE === 'right') {
+			Main.panel._rightBox.insert_child_at_index(this.container, EXTENSION_INDEX)
+			Main.panel._rightBox.insert_child_at_index(this.panelControls.container, EXTENSION_INDEX + 1)
 		}
 	}
 
-	_onClick(event){
-		const REPOSITION_ON_BUTTON_PRESS = this.settings.get_boolean('reposition-on-button-press');
+	_onClick (event) {
+		const REPOSITION_ON_BUTTON_PRESS = this.settings.get_boolean('reposition-on-button-press')
+		const SHOW_CONTROL = this.settings.get_boolean('show-panel-controls')
 
-		if (REPOSITION_ON_BUTTON_PRESS)
+		if (REPOSITION_ON_BUTTON_PRESS) {
 			this._updateTrayPosition(); //force tray position update on button press
+		}
+
+		if (SHOW_CONTROL) {
+			this._buildMenu()
+			this.menu.toggle()
+			return Clutter.EVENT_STOP
+		}
 
 		switch(event.get_button()){
 			case Clutter.BUTTON_PRIMARY:
@@ -350,28 +362,33 @@ class MprisLabel extends PanelMenu.Button {
 	}
 
 	_refresh() {
-		const REFRESH_RATE = this.settings.get_int('refresh-rate');
+		const refreshRate = this.settings.get_int('refresh-rate');
 
 		let prevPlayer = this.player;
 
 		try {
 			this.players.updateFilterList();
 			this.players.updateActiveList();
+
+			if (this.panelControls && this.player != null | undefined) {
+				this.panelControls.updateControls(this.player)
+			}
 		}
-		catch {
-			; //do nothing
+		catch(err){
+			log("Mpris _refresh: " + err);
 		}
 
 		this.player = this.players.pick();
 
-		if(this.player != prevPlayer)
+		if(this.player != null | undefined && this.player != prevPlayer) {
 			this._getStream();
+		}
 
 		this._setText();
 		this._setIcon();
 		this._removeTimeout();
 
-		this._timeout = Mainloop.timeout_add(REFRESH_RATE, this._refresh.bind(this));
+		this._timeout = Mainloop.timeout_add(refreshRate, this._refresh.bind(this));
 		return true;
 	}
 
@@ -390,9 +407,9 @@ class MprisLabel extends PanelMenu.Button {
 		this.icon = this.player.icon
 
 		if (this.icon != null | undefined){
-			if (ICON_PLACE == "right")
+			if (ICON_PLACE === "right")
 				this.box.add_child(this.icon);
-			else if (ICON_PLACE == "left")
+			else if (ICON_PLACE === "left")
 				this.box.insert_child_at_index(this.icon,0);
 		}
 	}
@@ -427,6 +444,8 @@ class MprisLabel extends PanelMenu.Button {
 
 		this.box.remove_child(this.label);
 		this.remove_child(this.box);
+  	this.panelControls.destroy();
+	 	this.remove_child(this.panelControls.container);
 		this._removeTimeout();
 
 		if (this._repositionTimeout){
@@ -435,4 +454,92 @@ class MprisLabel extends PanelMenu.Button {
 		}
 	}
 });
+
+
+class PanelControls {
+
+	constructor () {
+		this.container = new St.BoxLayout({ style_class: 'panel-status-menu-box', reactive: true, can_focus: true, track_hover: true, vertical: false })
+		this.forward = this._createContainerButton('media-skip-forward-symbolic', 'next-track', this.container)
+		this.play = this._createContainerButton('media-playback-start-symbolic', 'play', this.container)
+		this.pause = this._createContainerButton('media-playback-pause-symbolic', 'pause', this.container)
+		this.backward = this._createContainerButton('media-skip-backward-symbolic', 'prev-track', this.container)
+		this.pause.hide()
+		this.play.hide()
+		this.settings = ExtensionUtils.getSettings('org.gnome.shell.extensions.mpris-label')
+	}
+
+	_createContainerButton (iconName, command, container) {
+		let button = new St.Bin({ style_class: 'panel-button', reactive: true, can_focus: true, track_hover: true })
+		button.set_child(new St.Icon({ icon_name: iconName, style_class: 'system-status-icon' }))
+		button.connect('button-press-event', (_a, event) => this._controlPlayer(command))
+		container.insert_child_at_index(button, 0)
+
+		return button
+	}
+
+	_controlPlayer (value) {
+		switch (value) {
+			case 'play':
+				if (this.player) {
+					this.player.play()
+					this.pause.show()
+					this.play.hide()
+				}
+				break
+			case 'pause':
+				if (this.player) {
+					this.player.pause()
+					this.play.show()
+					this.pause.hide()
+				}
+				break
+			case 'next-track':
+				if (this.player) {
+					this.player.goNext()
+				}
+				break
+			case 'prev-track':
+				if (this.player) {
+					this.player.goPrevious()
+				}
+				break
+		}
+	}
+
+	updateControls (player) {
+		this.player = player
+
+		if (this.player.playbackStatus === 'Playing') {
+			this.pause.show()
+			this.play.hide()
+		} else {
+			this.play.show()
+			this.pause.hide()
+		}
+	}
+
+	showControls () {
+		this.panelControls.container.show()
+	}
+
+	hideControls () {
+		this.panelControls.container.hide()
+	}
+
+	updateShowPanelControls () {
+		if (this.settings.get_boolean('show-panel-controls')) {
+			this.panelControls.container.show()
+		} else {
+			this.panelControls.container.hide()
+		}
+	}
+
+	destroy () {
+		this.container.remove_child(this.forward)
+		this.container.remove_child(this.play)
+		this.container.remove_child(this.pause)
+		this.container.remove_child(this.backward)
+	}
+}
 
